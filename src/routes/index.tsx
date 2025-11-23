@@ -197,6 +197,13 @@ function Home() {
         });
     };
 
+    const hangupCall = () => {
+        pc.current?.close();
+        setCallId(null);
+        setIsCaller(false);
+        setStatus("Disconnected");
+    };
+
     return (
         <div className="p-8 max-w-4xl mx-auto font-sans">
             <h1 className="text-3xl font-bold mb-6">WebRTC + Convex</h1>
@@ -295,6 +302,13 @@ function Home() {
                                     className="flex-1 px-4 py-2 bg-purple-600 text-white rounded disabled:opacity-50"
                                 >
                                     2. Answer
+                                </button>
+                                <button
+                                    onClick={hangupCall}
+                                    disabled={!callId}
+                                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded disabled:opacity-50"
+                                >
+                                    Hang Up
                                 </button>
                             </div>
                         </div>
