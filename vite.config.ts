@@ -8,6 +8,7 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    allowedHosts: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [],
   },
   plugins: [
     tailwindcss(),
