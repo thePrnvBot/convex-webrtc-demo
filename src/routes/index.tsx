@@ -3,6 +3,7 @@ import { api } from 'convex/_generated/api';
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import type { Id } from 'convex/_generated/dataModel';
+import { Button } from '~/components/ui/button';
 
 export const Route = createFileRoute('/')({
     component: Home,
@@ -16,24 +17,19 @@ const SERVERS = {
 };
 
 function Home() {
-    // --- STATE ---
     const [callId, setCallId] = useState<Id<"calls"> | null>(null);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [status, setStatus] = useState("Idle");
     const [isCaller, setIsCaller] = useState(false);
 
-    // --- REFS (Stable across renders) ---
     const pc = useRef<RTCPeerConnection | null>(null);
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const callInputRef = useRef<HTMLInputElement>(null);
 
-    // Avoid processing the same candidates multiple times
     const processedCandidates = useRef<Set<string>>(new Set());
 
-    // --- CONVEX HOOKS ---
-    // This is the "Magic": React automatically re-runs when the DB changes
     const callData = useQuery(api.webrtc.getCall, { id: callId });
 
     const createCallMutation = useMutation(api.webrtc.createCall);
@@ -42,12 +38,9 @@ function Home() {
     const addOfferCandidateMutation = useMutation(api.webrtc.addOfferCandidate);
     const addAnswerCandidateMutation = useMutation(api.webrtc.addAnswerCandidate);
 
-    // --- INITIALIZATION EFFECT ---
     useEffect(() => {
-        // 1. Initialize Peer Connection
         pc.current = new RTCPeerConnection(SERVERS);
 
-        // 2. Handle Remote Tracks
         pc.current.ontrack = (event) => {
             console.log("📥 Received remote track");
             const stream = event.streams[0];
@@ -56,20 +49,16 @@ function Home() {
             }
         };
 
-        // 3. Handle Connection State Changes
         pc.current.onconnectionstatechange = () => {
             setStatus(pc.current?.connectionState || "Unknown");
         };
 
-        // Cleanup on unmount
         return () => {
             pc.current?.close();
             localStream?.getTracks().forEach(t => t.stop());
         };
     }, []);
-    // ^ Empty dependency array = runs once on mount
 
-    // --- SYNC UI VIDEO ELEMENTS ---
     useEffect(() => {
         if (localVideoRef.current && localStream) {
             localVideoRef.current.srcObject = localStream;
@@ -79,10 +68,6 @@ function Home() {
         }
     }, [localStream, remoteStream]);
 
-
-    // --- ICE CANDIDATE HANDLING ---
-    // We need to define this dynamically based on whether we are caller/answerer
-    // or simply check if we have a Call ID to send to.
     useEffect(() => {
         if (!pc.current || !callId) return;
 
@@ -98,8 +83,6 @@ function Home() {
         };
     }, [callId, isCaller]);
 
-
-    // --- SIGNALING LOOP (The "Brain") ---
     useEffect(() => {
         if (!pc.current || !callData) return;
 
@@ -138,9 +121,6 @@ function Home() {
 
         syncSignaling();
     }, [callData, isCaller]);
-
-
-    // --- USER ACTIONS ---
 
     const startWebcam = async () => {
         try {
@@ -251,13 +231,13 @@ function Home() {
             <div className="flex flex-col gap-4">
                 <section className="space-y-4">
                     <h3 className="font-bold text-lg">1. Setup</h3>
-                    <button
+                    <Button
                         onClick={startWebcam}
                         disabled={!!localStream}
                         className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
                     >
                         Start Webcam
-                    </button>
+                    </Button>
                 </section>
 
                 <div className="border-t my-2"></div>
@@ -269,13 +249,13 @@ function Home() {
                         {/* Caller Box */}
                         <div className="p-4 border rounded flex-1">
                             <h4 className="font-bold mb-2">Create New Call</h4>
-                            <button
+                            <Button
                                 onClick={createCall}
                                 disabled={!localStream || !!callId}
                                 className="px-4 py-2 bg-green-600 text-white rounded w-full disabled:opacity-50"
                             >
                                 Create Call ID
-                            </button>
+                            </Button>
                         </div>
 
                         <div className="flex items-center h-32 font-bold text-gray-400">OR</div>
@@ -289,27 +269,27 @@ function Home() {
                                 className="w-full p-2 border rounded mb-2"
                             />
                             <div className="flex gap-2">
-                                <button
+                                <Button
                                     onClick={joinCall}
                                     disabled={!localStream || !!callId}
                                     className="flex-1 px-4 py-2 bg-gray-700 text-white rounded disabled:opacity-50"
                                 >
                                     1. Join
-                                </button>
-                                <button
+                                </Button>
+                                <Button
                                     onClick={answerCall}
                                     disabled={!callData?.offer || isCaller || !!callData?.answer}
                                     className="flex-1 px-4 py-2 bg-purple-600 text-white rounded disabled:opacity-50"
                                 >
                                     2. Answer
-                                </button>
-                                <button
+                                </Button>
+                                <Button
                                     onClick={hangupCall}
                                     disabled={!callId}
                                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded disabled:opacity-50"
                                 >
                                     Hang Up
-                                </button>
+                                </Button>
                             </div>
                         </div>
                     </div>
