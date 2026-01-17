@@ -1,300 +1,347 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { api } from 'convex/_generated/api';
-import { useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery } from 'convex/react';
-import type { Id } from 'convex/_generated/dataModel';
-import { Button } from '~/components/ui/button';
+import { api } from 'convex/_generated/api'
+import type { Id } from 'convex/_generated/dataModel'
+import { useMutation, useQuery } from 'convex/react'
+import { useEffect, useRef, useState } from 'react'
+import { Button } from '~/components/ui/button'
+import { Fullscreen, Clipboard } from 'lucide-react'
 
 export const Route = createFileRoute('/')({
-    component: Home,
+  component: Home,
 })
 
 const SERVERS = {
-    iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-    ],
-};
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ],
+}
 
 function Home() {
-    const [callId, setCallId] = useState<Id<"calls"> | null>(null);
-    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-    const [status, setStatus] = useState("Idle");
-    const [isCaller, setIsCaller] = useState(false);
+  const [callId, setCallId] = useState<Id<'calls'> | null>(null)
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
+  const [status, setStatus] = useState('IDLE')
+  const [isCaller, setIsCaller] = useState(false)
 
-    const pc = useRef<RTCPeerConnection | null>(null);
-    const localVideoRef = useRef<HTMLVideoElement>(null);
-    const remoteVideoRef = useRef<HTMLVideoElement>(null);
-    const callInputRef = useRef<HTMLInputElement>(null);
+  const pc = useRef<RTCPeerConnection | null>(null)
+  const localVideoRef = useRef<HTMLVideoElement>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const callInputRef = useRef<HTMLInputElement>(null)
 
-    const processedCandidates = useRef<Set<string>>(new Set());
+  const processedCandidates = useRef<Set<string>>(new Set())
 
-    const callData = useQuery(api.webrtc.getCall, { id: callId });
+  const callData = useQuery(api.webrtc.getCall, { id: callId })
 
-    const createCallMutation = useMutation(api.webrtc.createCall);
-    const addOfferMutation = useMutation(api.webrtc.addOffer);
-    const addAnswerMutation = useMutation(api.webrtc.addAnswer);
-    const addOfferCandidateMutation = useMutation(api.webrtc.addOfferCandidate);
-    const addAnswerCandidateMutation = useMutation(api.webrtc.addAnswerCandidate);
+  const createCallMutation = useMutation(api.webrtc.createCall)
+  const addOfferMutation = useMutation(api.webrtc.addOffer)
+  const addAnswerMutation = useMutation(api.webrtc.addAnswer)
+  const addOfferCandidateMutation = useMutation(api.webrtc.addOfferCandidate)
+  const addAnswerCandidateMutation = useMutation(api.webrtc.addAnswerCandidate)
 
-    useEffect(() => {
-        pc.current = new RTCPeerConnection(SERVERS);
+  useEffect(() => {
+    pc.current = new RTCPeerConnection(SERVERS)
 
-        pc.current.ontrack = (event) => {
-            console.log("📥 Received remote track");
-            const stream = event.streams[0];
-            if (stream) {
-                setRemoteStream(stream);
-            }
-        };
+    pc.current.ontrack = (event) => {
+      console.log('📥 Received remote track')
+      const stream = event.streams[0]
+      if (stream) {
+        setRemoteStream(stream)
+      }
+    }
 
-        pc.current.onconnectionstatechange = () => {
-            setStatus(pc.current?.connectionState || "Unknown");
-        };
+    pc.current.onconnectionstatechange = () => {
+      setStatus(pc.current?.connectionState.toUpperCase() || 'UNKNOWN')
+    }
 
-        return () => {
-            pc.current?.close();
-            localStream?.getTracks().forEach(t => t.stop());
-        };
-    }, []);
+    return () => {
+      pc.current?.close()
+      localStream?.getTracks().forEach((t) => t.stop())
+    }
+  }, [])
 
-    useEffect(() => {
-        if (localVideoRef.current && localStream) {
-            localVideoRef.current.srcObject = localStream;
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream
+    }
+    if (remoteVideoRef.current && remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream
+    }
+  }, [localStream, remoteStream])
+
+  useEffect(() => {
+    if (!pc.current || !callId) return
+
+    pc.current.onicecandidate = (event) => {
+      if (event.candidate) {
+        const candidateString = JSON.stringify(event.candidate.toJSON())
+        if (isCaller) {
+          addOfferCandidateMutation({ id: callId, candidate: candidateString })
+        } else {
+          addAnswerCandidateMutation({ id: callId, candidate: candidateString })
         }
-        if (remoteVideoRef.current && remoteStream) {
-            remoteVideoRef.current.srcObject = remoteStream;
+      }
+    }
+  }, [callId, isCaller])
+
+  useEffect(() => {
+    if (!pc.current || !callData) return
+
+    const syncSignaling = async () => {
+      const connection = pc.current!
+
+      // 1. Handle Remote Offer (Answerer side)
+      if (
+        callData.offer &&
+        connection.signalingState === 'stable' &&
+        !isCaller
+      ) {
+        console.log('📝 Setting Remote Offer')
+        const offer = new RTCSessionDescription(
+          callData.offer as RTCSessionDescriptionInit,
+        )
+        await connection.setRemoteDescription(offer)
+        setStatus('RECIEVED OFFER')
+      }
+
+      // 2. Handle Remote Answer (Caller side)
+      if (
+        callData.answer &&
+        connection.signalingState === 'have-local-offer' &&
+        isCaller
+      ) {
+        console.log('📝 Setting Remote Answer')
+        const answer = new RTCSessionDescription(
+          callData.answer as RTCSessionDescriptionInit,
+        )
+        await connection.setRemoteDescription(answer)
+        setStatus('CONNECTED')
+      }
+
+      // 3. Handle Candidates (Trickle ICE)
+      // If I am caller, I need answerCandidates. If I am answerer, I need offerCandidates.
+      const newCandidates = isCaller
+        ? callData.answerCandidates
+        : callData.offerCandidates
+
+      for (const candidateString of newCandidates) {
+        if (!processedCandidates.current.has(candidateString)) {
+          const candidateInit = JSON.parse(candidateString)
+          await connection.addIceCandidate(candidateInit)
+          processedCandidates.current.add(candidateString)
+          console.log('🧊 Added ICE Candidate')
         }
-    }, [localStream, remoteStream]);
+      }
+    }
 
-    useEffect(() => {
-        if (!pc.current || !callId) return;
+    syncSignaling()
+  }, [callData, isCaller])
 
-        pc.current.onicecandidate = (event) => {
-            if (event.candidate) {
-                const candidateString = JSON.stringify(event.candidate.toJSON());
-                if (isCaller) {
-                    addOfferCandidateMutation({ id: callId, candidate: candidateString });
-                } else {
-                    addAnswerCandidateMutation({ id: callId, candidate: candidateString });
-                }
-            }
-        };
-    }, [callId, isCaller]);
+  const startWebcam = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      })
+      setLocalStream(stream)
 
-    useEffect(() => {
-        if (!pc.current || !callData) return;
+      // Add tracks to PC
+      stream.getTracks().forEach((track) => {
+        pc.current?.addTrack(track, stream)
+      })
+    } catch (err) {
+      alert('Could not start webcam')
+    }
+  }
 
-        const syncSignaling = async () => {
-            const connection = pc.current!;
+  const createCall = async () => {
+    if (!localStream) return alert('Start webcam first')
 
-            // 1. Handle Remote Offer (Answerer side)
-            if (callData.offer && connection.signalingState === "stable" && !isCaller) {
-                console.log("📝 Setting Remote Offer");
-                const offer = new RTCSessionDescription(callData.offer as RTCSessionDescriptionInit);
-                await connection.setRemoteDescription(offer);
-                setStatus("Received Offer");
-            }
+    setIsCaller(true)
+    const newCallId = await createCallMutation()
+    setCallId(newCallId)
 
-            // 2. Handle Remote Answer (Caller side)
-            if (callData.answer && connection.signalingState === "have-local-offer" && isCaller) {
-                console.log("📝 Setting Remote Answer");
-                const answer = new RTCSessionDescription(callData.answer as RTCSessionDescriptionInit);
-                await connection.setRemoteDescription(answer);
-                setStatus("Connected");
-            }
+    // Create Offer
+    const connection = pc.current!
+    const offer = await connection.createOffer()
+    await connection.setLocalDescription(offer)
 
-            // 3. Handle Candidates (Trickle ICE)
-            // If I am caller, I need answerCandidates. If I am answerer, I need offerCandidates.
-            const newCandidates = isCaller ? callData.answerCandidates : callData.offerCandidates;
+    await addOfferMutation({
+      id: newCallId,
+      offer: { type: offer.type, sdp: offer.sdp! },
+    })
+  }
 
-            for (const candidateString of newCandidates) {
-                if (!processedCandidates.current.has(candidateString)) {
-                    const candidateInit = JSON.parse(candidateString);
-                    await connection.addIceCandidate(candidateInit);
-                    processedCandidates.current.add(candidateString);
-                    console.log("🧊 Added ICE Candidate");
-                }
-            }
-        };
+  const joinCall = () => {
+    if (!localStream) return alert('Start webcam first')
+    const inputId = callInputRef.current?.value.trim()
+    if (!inputId) return alert('Enter Call ID')
 
-        syncSignaling();
-    }, [callData, isCaller]);
+    setIsCaller(false)
+    setCallId(inputId as Id<'calls'>)
+    setStatus('JOINING...')
+  }
 
-    const startWebcam = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            setLocalStream(stream);
+  const answerCall = async () => {
+    if (!pc.current || !callId) return
 
-            // Add tracks to PC
-            stream.getTracks().forEach(track => {
-                pc.current?.addTrack(track, stream);
-            });
-        } catch (err) {
-            alert("Could not start webcam");
-        }
-    };
+    const connection = pc.current
+    const answer = await connection.createAnswer()
+    await connection.setLocalDescription(answer)
 
-    const createCall = async () => {
-        if (!localStream) return alert("Start webcam first");
+    await addAnswerMutation({
+      id: callId,
+      answer: { type: answer.type, sdp: answer.sdp! },
+    })
+  }
 
-        setIsCaller(true);
-        const newCallId = await createCallMutation();
-        setCallId(newCallId);
+  const hangupCall = () => {
+    pc.current?.close()
+    setCallId(null)
+    setIsCaller(false)
+    setStatus('DISCONNECTED')
+  }
 
-        // Create Offer
-        const connection = pc.current!;
-        const offer = await connection.createOffer();
-        await connection.setLocalDescription(offer);
+  return (
+    <div className="p-8 max-w-4xl mx-auto font-sans">
+      <h1 className="text-3xl font-bold mb-6">Convex WebRTC Demo</h1>
 
-        await addOfferMutation({
-            id: newCallId,
-            offer: { type: offer.type, sdp: offer.sdp! }
-        });
-    };
-
-    const joinCall = () => {
-        if (!localStream) return alert("Start webcam first");
-        const inputId = callInputRef.current?.value.trim();
-        if (!inputId) return alert("Enter Call ID");
-
-        setIsCaller(false);
-        setCallId(inputId as Id<"calls">);
-        setStatus("Joining...");
-    };
-
-    const answerCall = async () => {
-        if (!pc.current || !callId) return;
-
-        const connection = pc.current;
-        const answer = await connection.createAnswer();
-        await connection.setLocalDescription(answer);
-
-        await addAnswerMutation({
-            id: callId,
-            answer: { type: answer.type, sdp: answer.sdp! }
-        });
-    };
-
-    const hangupCall = () => {
-        pc.current?.close();
-        setCallId(null);
-        setIsCaller(false);
-        setStatus("Disconnected");
-    };
-
-    return (
-        <div className="p-8 max-w-4xl mx-auto font-sans">
-            <h1 className="text-3xl font-bold mb-6">WebRTC + Convex</h1>
-
-            <div className="mb-6 p-4 bg-gray-100 rounded flex justify-between items-center">
-                <div>
-                    <span className="font-bold text-gray-700">Status: </span>
-                    <span className={`font-mono ${status === 'connected' ? 'text-green-600' : 'text-blue-600'}`}>
-                        {status}
-                    </span>
-                </div>
-                {callId && (
-                    <div className="text-sm bg-white px-2 py-1 rounded border">
-                        ID: {callId}
-                    </div>
-                )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mb-8">
-                {/* Local Video */}
-                <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
-                    <video
-                        ref={localVideoRef}
-                        autoPlay playsInline muted
-                        className="w-full h-full object-cover"
-                    />
-                    <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                        You
-                    </div>
-                </div>
-
-                {/* Remote Video */}
-                <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
-                    <video
-                        ref={remoteVideoRef}
-                        autoPlay playsInline
-                        className="w-full h-full object-cover"
-                    />
-                    <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                        Remote
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex flex-col gap-4">
-                <section className="space-y-4">
-                    <h3 className="font-bold text-lg">1. Setup</h3>
-                    <Button
-                        onClick={startWebcam}
-                        disabled={!!localStream}
-                        className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-                    >
-                        Start Webcam
-                    </Button>
-                </section>
-
-                <div className="border-t my-2"></div>
-
-                <section className="space-y-4">
-                    <h3 className="font-bold text-lg">2. Connect</h3>
-
-                    <div className="flex gap-4 items-start">
-                        {/* Caller Box */}
-                        <div className="p-4 border rounded flex-1">
-                            <h4 className="font-bold mb-2">Create New Call</h4>
-                            <Button
-                                onClick={createCall}
-                                disabled={!localStream || !!callId}
-                                className="px-4 py-2 bg-green-600 text-white rounded w-full disabled:opacity-50"
-                            >
-                                Create Call ID
-                            </Button>
-                        </div>
-
-                        <div className="flex items-center h-32 font-bold text-gray-400">OR</div>
-
-                        {/* Joiner Box */}
-                        <div className="p-4 border rounded flex-1">
-                            <h4 className="font-bold mb-2">Join Existing Call</h4>
-                            <input
-                                ref={callInputRef}
-                                placeholder="Paste Call ID..."
-                                className="w-full p-2 border rounded mb-2"
-                            />
-                            <div className="flex gap-2">
-                                <Button
-                                    onClick={joinCall}
-                                    disabled={!localStream || !!callId}
-                                    className="flex-1 px-4 py-2 bg-gray-700 text-white rounded disabled:opacity-50"
-                                >
-                                    1. Join
-                                </Button>
-                                <Button
-                                    onClick={answerCall}
-                                    disabled={!callData?.offer || isCaller || !!callData?.answer}
-                                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded disabled:opacity-50"
-                                >
-                                    2. Answer
-                                </Button>
-                                <Button
-                                    onClick={hangupCall}
-                                    disabled={!callId}
-                                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded disabled:opacity-50"
-                                >
-                                    Hang Up
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-            </div>
+      <div className="mb-6 p-4 bg-background rounded flex justify-between items-center">
+        <div>
+          <span className="font-bold text-gray-700">Status: </span>
+          <span
+            className={`font-mono ${status === 'CONNECTED' ? 'text-green-600' : 'text-blue-600'}`}
+          >
+            {status}
+          </span>
         </div>
-    );
+        {callId && (
+          <div className="flex text-sm bg-white px-2 py-1 rounded border h-fit items-center space-x-2">
+            ID: {callId}
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(callId)
+                alert('Copied to clipboard!')
+              }}
+              className="hover:bg-gray-900/10 text-black p-1 rounded duration-200 transition"
+            >
+              <Clipboard />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-8">
+        {/* Local Video */}
+        <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+            You
+          </div>
+        </div>
+
+        {/* Remote Video */}
+        <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+            Remote
+          </div>
+          {remoteStream && status === 'CONNECTED' && (
+            <button
+              className="absolute bottom-2 right-2 hover:bg-gray-50/10 text-white text-xs px-2 py-1 rounded duration-200 transition"
+              onClick={() => {
+                remoteVideoRef.current?.requestFullscreen()
+              }}
+            >
+              <Fullscreen />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <section className="space-y-4">
+          <h3 className="font-bold text-lg">1. Setup</h3>
+          <Button
+            onClick={startWebcam}
+            disabled={!!localStream}
+            className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+          >
+            Start Webcam
+          </Button>
+        </section>
+
+        <div className="border-t my-2"></div>
+
+        <section className="space-y-4">
+          <h3 className="font-bold text-lg">2. Connect</h3>
+
+          <div className="flex gap-4 items-start">
+            {/* Caller Box */}
+            <div className="p-4 border rounded flex-1">
+              <h4 className="font-bold mb-2">Create New Call</h4>
+              <Button
+                onClick={createCall}
+                disabled={!localStream || !!callId}
+                className="px-4 py-2 bg-green-600 text-white rounded w-full disabled:opacity-50"
+              >
+                Create Call ID
+              </Button>
+            </div>
+
+            <div className="flex items-center h-32 font-bold text-gray-400">
+              OR
+            </div>
+
+            {/* Joiner Box */}
+            <div className="p-4 border rounded flex-1">
+              <h4 className="font-bold mb-2">Join Existing Call</h4>
+              <input
+                ref={callInputRef}
+                placeholder="Paste Call ID..."
+                className="w-full p-2 border rounded mb-2"
+              />
+              <div className="flex gap-2">
+                {!isCaller && status !== 'CONNECTED' && (
+                  <Button
+                    onClick={joinCall}
+                    className="flex-1 px-4 py-2 bg-gray-700 text-white rounded disabled:opacity-50"
+                  >
+                    Join
+                  </Button>
+                )}
+                {callId && status === 'RECIEVED OFFER' && (
+                  <Button
+                    onClick={answerCall}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+                  >
+                    Answer
+                  </Button>
+                )}
+                {callId && status === 'CONNECTED' && (
+                  <Button
+                    onClick={hangupCall}
+                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded disabled:opacity-50"
+                  >
+                    Hang Up
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  )
 }
