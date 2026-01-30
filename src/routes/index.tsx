@@ -569,27 +569,22 @@ function Home() {
                         Join
                       </Button>
                     </motion.div>
-                  ) : status === 'RECEIVED OFFER' ? (
-                    <motion.div
-                      key="answer"
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 10 }}
-                    >
-                      <Button
-                        onClick={answerCall}
-                        className="bg-[#56b6c2] hover:bg-[#4fa8b3] text-[#282c34] font-medium shadow-lg shadow-[#56b6c2]/20"
-                      >
-                        Answer
-                      </Button>
-                    </motion.div>
                   ) : (
                     <motion.div
-                      key="hangup"
+                      key="call-actions"
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: 10 }}
+                      className="flex gap-2"
                     >
+                      {status === 'RECEIVED OFFER' && (
+                        <Button
+                          onClick={answerCall}
+                          className="bg-[#56b6c2] hover:bg-[#4fa8b3] text-[#282c34] font-medium shadow-lg shadow-[#56b6c2]/20"
+                        >
+                          Answer
+                        </Button>
+                      )}
                       <Button
                         onClick={hangupCall}
                         variant="destructive"
