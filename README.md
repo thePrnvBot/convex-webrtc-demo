@@ -1,6 +1,8 @@
-# TanStack Start WebRTC Video Chat
+# WebRTC Video Chat
 
 A real-time video chat application built with TanStack Start, WebRTC, and Convex for peer-to-peer video communication.
+
+<img width="1324" height="1197" alt="image" src="https://github.com/user-attachments/assets/e9939142-11f2-45f8-8964-b8abacb8e062" />
 
 ## Features
 
